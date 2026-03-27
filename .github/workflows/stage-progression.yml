@@ -95,9 +95,26 @@ jobs:
             const directors    = extractAll('Engineering Director');
             const leadership   = [teamLeads, prodOwners, engManagers].filter(Boolean).join(' ');
 
-            // Extract PR URL
+            // Extract PR URL and parse it
             const prMatch = body.match(/\*\*PR\*\* \| \[.+?\]\((.+?)\)/);
             const prUrl   = prMatch ? prMatch[1] : '';
+            const prParts = prUrl.replace('https://github.com/', '').split('/');
+            const prOwner  = prParts[0] || '';
+            const prRepo   = prParts[1] || '';
+            const prNumber = parseInt(prParts[3]) || 0;
+            const approvalIssueUrl = `https://github.com/${context.repo.owner}/approvals/issues/${issueNumber}`;
+
+            // Helper to comment on the PR
+            const commentOnPR = async (text) => {
+              if (prOwner && prRepo && prNumber) {
+                await github.rest.issues.createComment({
+                  owner: prOwner,
+                  repo: prRepo,
+                  issue_number: prNumber,
+                  body: text
+                });
+              }
+            };
 
             if (s1 && s2 && s3 && s4) {
               // All done - mark Stage 4 complete
@@ -111,38 +128,34 @@ jobs:
               });
 
               // Unblock PR
-              const parts    = prUrl.replace('https://github.com/', '').split('/');
-              const prOwner  = parts[0];
-              const prRepo   = parts[1];
-              const prNumber = parseInt(parts[3]);
               const pr = await github.rest.pulls.get({ owner: prOwner, repo: prRepo, pull_number: prNumber });
               await github.rest.repos.createCommitStatus({
                 owner: prOwner, repo: prRepo, sha: pr.data.head.sha,
                 state: 'success',
                 description: 'All approvals complete — ready to merge',
                 context: 'approval-process',
-                target_url: `https://github.com/${context.repo.owner}/approvals/issues/${issueNumber}`
+                target_url: approvalIssueUrl
               });
-              await github.rest.issues.createComment({
-                owner: prOwner, repo: prRepo, issue_number: prNumber,
-                body: `## ✅ Approval Process Complete\n\nAll required approvals collected. This PR is cleared for merge.\n\n📋 **Approval record:** https://github.com/${context.repo.owner}/approvals/issues/${issueNumber}`
-              });
+              await commentOnPR(`## ✅ Approval Process Complete\n\nAll required approvals collected. This PR is cleared for merge.\n\n📋 **Approval record:** ${approvalIssueUrl}`);
 
             } else if (s1 && s2 && s3 && labels.includes('pending-architect')) {
               await markStageComplete(3, 'Architecture Review');
               await removeLabel('pending-architect');
               await addLabel('pending-director');
               await comment(`✅ **Stage 3 complete** — Architecture review approved.\n\n${directors} — your final sign-off is needed. Please check your box above.`);
+              await commentOnPR(`### 🔄 Approval Progress Update\n\n✅ **Stage 3 complete** — Architecture review approved.\n\n**Awaiting:** ${directors} (Director Sign-off)\n\n📋 [Track progress](${approvalIssueUrl})`);
 
             } else if (s1 && s2 && labels.includes('pending-leadership')) {
               await markStageComplete(2, 'Leadership Sign-off');
               await removeLabel('pending-leadership');
               await addLabel('pending-architect');
               await comment(`✅ **Stage 2 complete** — Leadership approvals done.\n\n${architects} — your architecture review is now needed. Please check your box above.`);
+              await commentOnPR(`### 🔄 Approval Progress Update\n\n✅ **Stage 2 complete** — Leadership sign-off done.\n\n**Awaiting:** ${architects} (Architecture Review)\n\n📋 [Track progress](${approvalIssueUrl})`);
 
             } else if (s1 && labels.includes('pending-assignee')) {
               await markStageComplete(1, 'Team Review');
               await removeLabel('pending-assignee');
               await addLabel('pending-leadership');
               await comment(`✅ **Stage 1 complete** — Team assignee review done.\n\n${leadership} — your approvals are needed for Stage 2 (one from each role).`);
+              await commentOnPR(`### 🔄 Approval Progress Update\n\n✅ **Stage 1 complete** — Team review done.\n\n**Awaiting:** ${leadership} (Leadership Sign-off - one from each role)\n\n📋 [Track progress](${approvalIssueUrl})`);
             }
