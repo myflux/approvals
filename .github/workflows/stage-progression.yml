@@ -36,12 +36,14 @@ jobs:
             const issueNumber = context.payload.issue.number;
             const labels      = context.payload.issue.labels.map(l => l.name);
 
-            const checked = (label) => new RegExp(`- \\[x\\].*${label}`, 'i').test(body);
+            // Check if ANY checkbox for a role is checked (any one can approve)
+            const anyChecked = (role) => new RegExp(`- \\[x\\].*\\*\\*${role}\\*\\*`, 'i').test(body);
 
-            const s1 = checked('Team Reviewer');
-            const s2 = checked('Tech Lead') && checked('Product Owner') && checked('Engineering Manager');
-            const s3 = checked('Architect');
-            const s4 = checked('Engineering Director');
+            const s1 = anyChecked('Team Reviewer');
+            // Stage 2: need one from each role (Tech Lead, Product Owner, Eng Manager)
+            const s2 = anyChecked('Tech Lead') && anyChecked('Product Owner') && anyChecked('Engineering Manager');
+            const s3 = anyChecked('Architect');
+            const s4 = anyChecked('Engineering Director');
 
             const removeLabel = async (name) => {
               await github.rest.issues.removeLabel({
@@ -64,16 +66,19 @@ jobs:
               });
             };
 
-            // Extract approver handles from issue body
-            const extract = (pattern) => {
-              const m = body.match(pattern);
-              return m ? m[1] : '';
+            // Extract ALL handles for a role from issue body
+            const extractAll = (role) => {
+              const regex = new RegExp(`\\*\\*${role}\\*\\* (@\\S+)`, 'gi');
+              const matches = [...body.matchAll(regex)];
+              return matches.map(m => m[1]).join(' ');
             };
-            const tl   = extract(/\*\*Tech Lead\*\* (@\S+)/);
-            const po   = extract(/\*\*Product Owner\*\* (@\S+)/);
-            const em   = extract(/\*\*Engineering Manager\*\* (@\S+)/);
-            const arch = extract(/\*\*Architect\*\* (@\S+)/);
-            const dir  = extract(/\*\*Engineering Director\*\* (@\S+)/);
+            
+            const teamLeads    = extractAll('Tech Lead');
+            const prodOwners   = extractAll('Product Owner');
+            const engManagers  = extractAll('Engineering Manager');
+            const architects   = extractAll('Architect');
+            const directors    = extractAll('Engineering Director');
+            const leadership   = [teamLeads, prodOwners, engManagers].filter(Boolean).join(' ');
 
             // Extract PR URL
             const prMatch = body.match(/\*\*PR\*\* \| \[.+?\]\((.+?)\)/);
@@ -110,15 +115,15 @@ jobs:
             } else if (s1 && s2 && s3 && labels.includes('pending-architect')) {
               await removeLabel('pending-architect');
               await addLabel('pending-director');
-              await comment(`✅ **Stage 3 complete** — Architecture review approved.\n\n${dir} — your final sign-off is needed. Please check your box above.`);
+              await comment(`✅ **Stage 3 complete** — Architecture review approved.\n\n${directors} — your final sign-off is needed. Please check your box above.`);
 
             } else if (s1 && s2 && labels.includes('pending-leadership')) {
               await removeLabel('pending-leadership');
               await addLabel('pending-architect');
-              await comment(`✅ **Stage 2 complete** — Leadership approvals done.\n\n${arch} — your architecture review is now needed. Please check your box above.`);
+              await comment(`✅ **Stage 2 complete** — Leadership approvals done.\n\n${architects} — your architecture review is now needed. Please check your box above.`);
 
             } else if (s1 && labels.includes('pending-assignee')) {
               await removeLabel('pending-assignee');
               await addLabel('pending-leadership');
-              await comment(`✅ **Stage 1 complete** — Team assignee review done.\n\n${tl} ${po} ${em} — your approvals are needed for Stage 2. All three must check their box above.`);
+              await comment(`✅ **Stage 1 complete** — Team assignee review done.\n\n${leadership} — your approvals are needed for Stage 2 (one from each role).`);
             }
