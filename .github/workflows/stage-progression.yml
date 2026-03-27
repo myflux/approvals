@@ -59,11 +59,26 @@ jobs:
               });
             };
 
-            const comment = async (body) => {
+            const comment = async (text) => {
               await github.rest.issues.createComment({
                 owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: issueNumber, body
+                issue_number: issueNumber, body: text
               });
+            };
+
+            // Update issue body to add ✅ to a stage header
+            const markStageComplete = async (stageNum, stageName) => {
+              const currentBody = context.payload.issue.body || '';
+              const pattern = new RegExp(`### Stage ${stageNum} — ${stageName}(?!.*✅)`, 'i');
+              if (pattern.test(currentBody)) {
+                const newBody = currentBody.replace(pattern, `### Stage ${stageNum} — ${stageName} ✅`);
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: newBody
+                });
+              }
             };
 
             // Extract ALL handles for a role from issue body
@@ -85,7 +100,8 @@ jobs:
             const prUrl   = prMatch ? prMatch[1] : '';
 
             if (s1 && s2 && s3 && s4) {
-              // All done
+              // All done - mark Stage 4 complete
+              await markStageComplete(4, 'Director Sign-off');
               await removeLabel('pending-director');
               await addLabel('approved');
               await comment(`🎉 **All approvals complete!**\n\nAll approvers have signed off. The PR is cleared for merge.\n\n➡️ ${prUrl}`);
@@ -113,16 +129,19 @@ jobs:
               });
 
             } else if (s1 && s2 && s3 && labels.includes('pending-architect')) {
+              await markStageComplete(3, 'Architecture Review');
               await removeLabel('pending-architect');
               await addLabel('pending-director');
               await comment(`✅ **Stage 3 complete** — Architecture review approved.\n\n${directors} — your final sign-off is needed. Please check your box above.`);
 
             } else if (s1 && s2 && labels.includes('pending-leadership')) {
+              await markStageComplete(2, 'Leadership Sign-off');
               await removeLabel('pending-leadership');
               await addLabel('pending-architect');
               await comment(`✅ **Stage 2 complete** — Leadership approvals done.\n\n${architects} — your architecture review is now needed. Please check your box above.`);
 
             } else if (s1 && labels.includes('pending-assignee')) {
+              await markStageComplete(1, 'Team Review');
               await removeLabel('pending-assignee');
               await addLabel('pending-leadership');
               await comment(`✅ **Stage 1 complete** — Team assignee review done.\n\n${leadership} — your approvals are needed for Stage 2 (one from each role).`);
