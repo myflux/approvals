@@ -33,7 +33,7 @@ jobs:
 
             const checked = (label) => new RegExp(`- \\[x\\].*${label}`, 'i').test(body);
 
-            const s1 = checked('Team Assignee');
+            const s1 = checked('Team Reviewer');
             const s2 = checked('Tech Lead') && checked('Product Owner') && checked('Engineering Manager');
             const s3 = checked('Architect');
             const s4 = checked('Engineering Director');
