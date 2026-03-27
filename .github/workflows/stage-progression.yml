@@ -16,10 +16,15 @@ jobs:
     name: Check and Advance Approval Stage
     runs-on: ubuntu-latest
     if: |
-      contains(github.event.issue.labels.*.name, 'pending-assignee') ||
-      contains(github.event.issue.labels.*.name, 'pending-leadership') ||
-      contains(github.event.issue.labels.*.name, 'pending-architect') ||
-      contains(github.event.issue.labels.*.name, 'pending-director')
+      github.event.issue.state == 'open' &&
+      !contains(github.event.issue.labels.*.name, 'approved') &&
+      (github.event_name == 'issues' || github.event.comment.user.login != 'github-actions[bot]') &&
+      (
+        contains(github.event.issue.labels.*.name, 'pending-assignee') ||
+        contains(github.event.issue.labels.*.name, 'pending-leadership') ||
+        contains(github.event.issue.labels.*.name, 'pending-architect') ||
+        contains(github.event.issue.labels.*.name, 'pending-director')
+      )
 
     steps:
       - name: Parse checklist and advance stage
